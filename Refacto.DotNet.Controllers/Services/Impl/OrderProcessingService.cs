@@ -1,7 +1,7 @@
+using Merjane.Domain;
+using Merjane.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Refacto.DotNet.Controllers.Database.Context;
-using Refacto.DotNet.Controllers.Domain;
-using Refacto.DotNet.Controllers.Entities;
 
 namespace Refacto.DotNet.Controllers.Services.Impl
 {

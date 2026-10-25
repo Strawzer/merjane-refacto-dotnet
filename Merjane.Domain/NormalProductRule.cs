@@ -1,6 +1,6 @@
-using Refacto.DotNet.Controllers.Entities;
+using Merjane.Domain.Entities;
 
-namespace Refacto.DotNet.Controllers.Domain
+namespace Merjane.Domain
 {
     public static class NormalProductRule
     {

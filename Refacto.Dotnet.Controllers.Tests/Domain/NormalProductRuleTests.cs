@@ -1,5 +1,5 @@
-using Refacto.DotNet.Controllers.Domain;
-using Refacto.DotNet.Controllers.Entities;
+using Merjane.Domain;
+using Merjane.Domain.Entities;
 
 namespace Refacto.DotNet.Controllers.Tests.Domain
 {

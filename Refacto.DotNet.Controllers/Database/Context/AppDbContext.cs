@@ -1,5 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
-using Refacto.DotNet.Controllers.Entities;
+﻿using Merjane.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace Refacto.DotNet.Controllers.Database.Context
 {

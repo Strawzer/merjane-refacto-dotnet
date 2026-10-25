@@ -1,6 +1,6 @@
-using Refacto.DotNet.Controllers.Entities;
+using Merjane.Domain.Entities;
 
-namespace Refacto.DotNet.Controllers.Domain
+namespace Merjane.Domain
 {
     /// <summary>
     /// Outcome of an availability rule for one ordered product.

@@ -1,4 +1,4 @@
-namespace Refacto.DotNet.Controllers.Domain
+namespace Merjane.Domain
 {
     public abstract record ProductNotification(string ProductName);
 

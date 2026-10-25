@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace Refacto.DotNet.Controllers.Entities
+namespace Merjane.Domain.Entities
 {
     [Table("products")]
     public class Product
