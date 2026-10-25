@@ -25,14 +25,13 @@ The application services use `AppDbContext` directly as their unit of work; no r
 
 ### Running the tests
 
-The projects target `net7.0`. If the .NET 7 runtime is not installed, run the tests on a newer installed runtime through roll-forward (PowerShell):
+The projects target `net10.0` (EF Core 10, ASP.NET Core 10) and require the .NET 10 SDK:
 
 ```powershell
-$env:DOTNET_ROLL_FORWARD = "Major"
 dotnet test
 ```
 
-The refactoring was validated this way (SDK 10.0.303, .NET 8 runtime), not natively on .NET 7. Date-dependent tests use a fixed clock and do not depend on the system date.
+Date-dependent tests use a fixed clock and do not depend on the system date. The assessment delivery on `net7.0` is tagged `merjane-assessment-baseline-73tests`.
 
 ### Preserved legacy behaviors
 
