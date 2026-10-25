@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
 using Refacto.DotNet.Controllers.Database.Context;
 using Refacto.DotNet.Controllers.Entities;
@@ -13,6 +14,7 @@ namespace Refacto.DotNet.Controllers.Tests.Services
         private static readonly DateTime Today = Now.Date;
 
         private readonly Mock<INotificationService> _mockNotificationService = new();
+        private readonly FailingSaveInterceptor _failingSave = new();
         private readonly AppDbContext _ctx;
         private readonly OrderProcessingService _service;
 
@@ -20,6 +22,7 @@ namespace Refacto.DotNet.Controllers.Tests.Services
         {
             DbContextOptions<AppDbContext> options = new DbContextOptionsBuilder<AppDbContext>()
                 .UseInMemoryDatabase($"OrderProcessingServiceTests-{Guid.NewGuid()}")
+                .AddInterceptors(_failingSave)
                 .Options;
             _ctx = new AppDbContext(options);
             Mock<IClock> clock = new();
@@ -64,6 +67,7 @@ namespace Refacto.DotNet.Controllers.Tests.Services
             Product normal = Normal("USB Cable", available: 3);
             Product expired = Expirable("Milk", available: 6, expiryDate: Today.AddDays(-1));
             Order order = Seed(normal, expired);
+            AssertProcessingOrder(order, "USB Cable", "Milk");
             _ = _mockNotificationService
                 .Setup(s => s.SendExpirationNotification(It.IsAny<string>(), It.IsAny<DateTime>()))
                 .Throws(new InvalidOperationException("Notification failed"));
@@ -74,9 +78,57 @@ namespace Refacto.DotNet.Controllers.Tests.Services
             Assert.Equal(6, Reload(expired).Available);
         }
 
+        [Fact]
+        public void MissingExpiryDate_StopsProcessing_KeepingEarlierProductsSavedAndLaterOnesUntouched()
+        {
+            Product first = Normal("USB Cable", available: 3);
+            Product withoutExpiryDate = new() { LeadTime = 15, Available = 3, Type = "EXPIRABLE", Name = "Milk" };
+            Product last = Normal("Mouse", available: 3);
+            Order order = Seed(first, withoutExpiryDate, last);
+            AssertProcessingOrder(order, "USB Cable", "Milk", "Mouse");
+
+            _ = Assert.Throws<InvalidOperationException>(() => _service.ProcessOrder(order.Id));
+
+            Assert.Equal(2, Reload(first).Available);
+            Assert.Equal(3, Reload(withoutExpiryDate).Available);
+            Assert.Equal(3, Reload(last).Available);
+            _mockNotificationService.VerifyNoOtherCalls();
+        }
+
+        [Fact]
+        public void SaveFailure_AfterNotification_Propagates_AndOnlyKeepsEarlierProductsSaved()
+        {
+            DateTime expiryDate = Today.AddDays(-1);
+            Product normal = Normal("USB Cable", available: 3);
+            Product expired = Expirable("Milk", available: 6, expiryDate: expiryDate);
+            Order order = Seed(normal, expired);
+            AssertProcessingOrder(order, "USB Cable", "Milk");
+            _failingSave.FailWhenSavingProduct = "Milk";
+
+            _ = Assert.Throws<DbUpdateException>(() => _service.ProcessOrder(order.Id));
+
+            Assert.Equal(2, Reload(normal).Available);
+            Assert.Equal(6, Reload(expired).Available);
+            _mockNotificationService.Verify(s => s.SendExpirationNotification("Milk", expiryDate), Times.Once());
+            _mockNotificationService.VerifyNoOtherCalls();
+        }
+
         public void Dispose()
         {
             _ctx.Dispose();
+        }
+
+        private void AssertProcessingOrder(Order order, params string[] expectedProductNames)
+        {
+            List<string?> productNames = _ctx.Orders
+                .Include(o => o.Items)
+                .Single(o => o.Id == order.Id)
+                .Items!
+                .Select(p => p.Name)
+                .ToList();
+            _ctx.ChangeTracker.Clear();
+
+            Assert.Equal(expectedProductNames, productNames);
         }
 
         private Order Seed(params Product[] products)
@@ -101,6 +153,19 @@ namespace Refacto.DotNet.Controllers.Tests.Services
         private static Product Expirable(string name, int available, DateTime expiryDate)
         {
             return new Product { LeadTime = 15, Available = available, Type = "EXPIRABLE", Name = name, ExpiryDate = expiryDate };
+        }
+
+        private sealed class FailingSaveInterceptor : SaveChangesInterceptor
+        {
+            public string? FailWhenSavingProduct { get; set; }
+
+            public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+            {
+                bool savesFailingProduct = eventData.Context!.ChangeTracker.Entries<Product>()
+                    .Any(e => e.State == EntityState.Modified && e.Entity.Name == FailWhenSavingProduct);
+
+                return savesFailingProduct ? throw new DbUpdateException("Save failed") : result;
+            }
         }
     }
 }

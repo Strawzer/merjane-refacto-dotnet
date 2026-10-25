@@ -15,18 +15,23 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
         private readonly WebApplicationFactory<Program> _factory;
         private readonly AppDbContext _context;
         private readonly Mock<INotificationService> _mockNotificationService;
+        private readonly Mock<IClock> _mockClock;
 
-        private static DateTime Today => DateTime.Today;
+        private static readonly DateTime Now = new(2026, 6, 15, 14, 30, 0);
+        private static DateTime Today => Now.Date;
 
         public MyControllerIntegrationTests(WebApplicationFactory<Program> factory)
         {
             _mockNotificationService = new Mock<INotificationService>();
+            _mockClock = new Mock<IClock>();
+            _ = _mockClock.Setup(c => c.Now).Returns(Now);
 
             _factory = factory.WithWebHostBuilder(builder =>
             {
                 _ = builder.ConfigureServices(services =>
                 {
                     _ = services.AddSingleton(_mockNotificationService.Object);
+                    _ = services.AddSingleton(_mockClock.Object);
 
                     ServiceDescriptor? descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
                     if (descriptor != null)
@@ -68,8 +73,9 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
             HttpResponseMessage response = await client.PostAsync($"/orders/{order.Id}/processOrder", null);
             _ = response.EnsureSuccessStatusCode();
 
+            Assert.Equal($"{{\"id\":{order.Id}}}", await response.Content.ReadAsStringAsync());
             Order? resultOrder = await _context.Orders.FindAsync(order.Id);
-            Assert.Equal(resultOrder.Id, order.Id);
+            Assert.NotNull(resultOrder);
         }
 
         [Fact]
@@ -337,6 +343,28 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
             Assert.Equal(10, (await ReloadAsync(notOrdered)).Available);
         }
 
+        [Fact]
+        public async Task ProcessOrder_WithSeveralOrders_OnlyProcessesTheRequestedOrder()
+        {
+            Product cableOfOrderA = new() { LeadTime = 5, Available = 10, Type = "NORMAL", Name = "USB Cable" };
+            Product webcamOfOrderA = new() { LeadTime = 3, Available = 0, Type = "NORMAL", Name = "Webcam" };
+            Product keyboardOfOrderB = new() { LeadTime = 5, Available = 10, Type = "NORMAL", Name = "Keyboard" };
+            Product mouseOfOrderB = new() { LeadTime = 7, Available = 0, Type = "NORMAL", Name = "Mouse" };
+            _ = await SeedOrderAsync(cableOfOrderA, webcamOfOrderA);
+            Order orderB = await SeedOrderAsync(keyboardOfOrderB, mouseOfOrderB);
+
+            HttpResponseMessage response = await _factory.CreateClient().PostAsync($"/orders/{orderB.Id}/processOrder", null);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal($"{{\"id\":{orderB.Id}}}", await response.Content.ReadAsStringAsync());
+            Assert.Equal(9, (await ReloadAsync(keyboardOfOrderB)).Available);
+            Assert.Equal(0, (await ReloadAsync(mouseOfOrderB)).Available);
+            Assert.Equal(10, (await ReloadAsync(cableOfOrderA)).Available);
+            Assert.Equal(0, (await ReloadAsync(webcamOfOrderA)).Available);
+            _mockNotificationService.Verify(s => s.SendDelayNotification(7, "Mouse"), Times.Once());
+            _mockNotificationService.VerifyNoOtherCalls();
+        }
+
         private async Task<Order> SeedOrderAsync(params Product[] products)
         {
             Order order = CreateOrder(new HashSet<Product>(products));
@@ -385,10 +413,10 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
             {
                 new Product { LeadTime = 15, Available = 30, Type = "NORMAL", Name = "USB Cable" },
                 new Product { LeadTime = 10, Available = 0, Type = "NORMAL", Name = "USB Dongle" },
-                new Product { LeadTime = 15, Available = 30, Type = "EXPIRABLE", Name = "Butter", ExpiryDate = DateTime.Now.AddDays(26) },
-                new Product { LeadTime = 90, Available = 6, Type = "EXPIRABLE", Name = "Milk", ExpiryDate = DateTime.Now.AddDays(-2) },
-                new Product { LeadTime = 15, Available = 30, Type = "SEASONAL", Name = "Watermelon", SeasonStartDate = DateTime.Now.AddDays(-2), SeasonEndDate = DateTime.Now.AddDays(58) },
-                new Product { LeadTime = 15, Available = 30, Type = "SEASONAL", Name = "Grapes", SeasonStartDate = DateTime.Now.AddDays(180), SeasonEndDate = DateTime.Now.AddDays(240) }
+                new Product { LeadTime = 15, Available = 30, Type = "EXPIRABLE", Name = "Butter", ExpiryDate = Now.AddDays(26) },
+                new Product { LeadTime = 90, Available = 6, Type = "EXPIRABLE", Name = "Milk", ExpiryDate = Now.AddDays(-2) },
+                new Product { LeadTime = 15, Available = 30, Type = "SEASONAL", Name = "Watermelon", SeasonStartDate = Now.AddDays(-2), SeasonEndDate = Now.AddDays(58) },
+                new Product { LeadTime = 15, Available = 30, Type = "SEASONAL", Name = "Grapes", SeasonStartDate = Now.AddDays(180), SeasonEndDate = Now.AddDays(240) }
             };
         }
     }

@@ -44,6 +44,50 @@ namespace Refacto.DotNet.Controllers.Tests.Domain
         }
 
         [Fact]
+        public void SeasonStartedEarlierToday_IsNotSold_AndComparesTimeOfDay_ToNotifyDelay()
+        {
+            ProductDecision decision = SeasonalProductRule.Decide(Seasonal(30, 15, Today.AddHours(10), Today.AddDays(58)), Now);
+
+            Assert.Null(decision.NewAvailable);
+            Assert.Equal(new DelayNotification("Watermelon", 15), decision.Notification);
+            Assert.True(decision.RequiresSave);
+        }
+
+        [Theory]
+        [InlineData(null, 58)]
+        [InlineData(-2, null)]
+        [InlineData(null, null)]
+        public void MissingSeasonDate_IsNotSold_AndNotifiesDelay(int? seasonStartOffsetDays, int? seasonEndOffsetDays)
+        {
+            Product product = new()
+            {
+                LeadTime = 15,
+                Available = 30,
+                Type = "SEASONAL",
+                Name = "Watermelon",
+                SeasonStartDate = seasonStartOffsetDays is int startOffset ? Today.AddDays(startOffset) : null,
+                SeasonEndDate = seasonEndOffsetDays is int endOffset ? Today.AddDays(endOffset) : null
+            };
+
+            ProductDecision decision = SeasonalProductRule.Decide(product, Now);
+
+            Assert.Null(decision.NewAvailable);
+            Assert.Equal(new DelayNotification("Watermelon", 15), decision.Notification);
+            Assert.True(decision.RequiresSave);
+        }
+
+        [Fact]
+        public void MissingSeasonEnd_BeforeSeasonStart_NotifiesOutOfStockAndKeepsStock()
+        {
+            Product product = new() { LeadTime = 15, Available = 30, Type = "SEASONAL", Name = "Watermelon", SeasonStartDate = Today.AddDays(10) };
+
+            ProductDecision decision = SeasonalProductRule.Decide(product, Now);
+
+            Assert.Null(decision.NewAvailable);
+            Assert.Equal(new OutOfStockNotification("Watermelon"), decision.Notification);
+        }
+
+        [Fact]
         public void SeasonEndsTomorrow_SellsOneUnit()
         {
             ProductDecision decision = SeasonalProductRule.Decide(Seasonal(30, 0, Today.AddDays(-10), Today.AddDays(1)), Now);
