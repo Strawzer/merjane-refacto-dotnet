@@ -10,18 +10,42 @@
 
 ### Architecture
 
-| Layer | Files | Responsibility |
-|---|---|---|
-| API | `Controllers/MyController.cs` (`OrdersController`) | Maps `POST /orders/{orderId}/processOrder` to the use case and returns `ProcessOrderResponse`. No business rules or data access. |
-| Application | `Services/Impl/OrderProcessingService.cs` | Loads the order with its products, reads the clock once, applies the rule of each product. |
-| Application | `Services/Impl/ProductDecisionExecutor.cs` | Executes a decision: sends the notification, updates stock, saves the product. |
-| Application | `Services/IClock.cs`, `Services/Impl/SystemClock.cs` | Current time, injected so that date rules can be tested deterministically. |
-| Domain | `Domain/NormalProductRule.cs`, `SeasonalProductRule.cs`, `ExpirableProductRule.cs`, `ProductAvailabilityRules.cs` | Pure business decisions per product type; no EF Core, ASP.NET Core, clock or notification dependency. |
-| Domain | `Domain/ProductDecision.cs`, `Domain/ProductNotification.cs` | Explicit rule outcome: new stock quantity and notification payload. |
-| Persistence | `Database/Context/AppDbContext.cs`, `Entities/*` | EF Core model (unchanged). |
-| Legacy | `Services/Impl/ProductService.cs` | Compatibility adapter keeping the original public methods for their existing unit tests. It delegates to the domain rules, is not registered in dependency injection and is not used by production code. |
+The production code is split into four `net10.0` projects. The API project keeps its original name, assembly and namespaces (`Refacto.DotNet.Controllers`) for compatibility.
 
-The application services use `AppDbContext` directly as their unit of work; no repository layer was added for a single query. Domain rules only depend on the `Product` entity (plain properties with data annotations) and receive the current time as a parameter.
+| Project | Main files | Responsibility |
+|---|---|---|
+| `Merjane.Domain` | `Entities/Product.cs`, `Entities/Order.cs`, `NormalProductRule.cs`, `SeasonalProductRule.cs`, `ExpirableProductRule.cs`, `ProductAvailabilityRules.cs`, `ProductDecision.cs`, `ProductNotification.cs` | Entities and pure business decisions per product type. The current time is a parameter; no EF Core, ASP.NET Core, clock or notification dependency. |
+| `Merjane.Application` | `OrderProcessingService.cs`, `ProductDecisionExecutor.cs`, `OrderNotFoundException.cs`, `Ports/IOrderProcessingStore.cs`, `Ports/IProductNotificationPort.cs`, `Ports/IClock.cs` | Order processing use case: loads the order, reads the clock once, applies the rule of each product, then sends the notification, updates stock and saves, product by product. |
+| `Merjane.Infrastructure` | `Persistence/AppDbContext.cs`, `Persistence/EfOrderProcessingStore.cs`, `SystemClock.cs`, `InfrastructureServiceCollectionExtensions.cs` | EF Core InMemory persistence and system clock, registered by `AddInfrastructure()`. |
+| `Refacto.DotNet.Controllers` (API) | `Controllers/MyController.cs` (`OrdersController`), `Dtos/`, `Program.cs`, `Services/Impl/ProductNotificationAdapter.cs`, protected `Services/INotificationService.cs` and `Services/Impl/NotificationService.cs`, legacy `Services/Impl/ProductService.cs` | `POST /orders/{orderId}/processOrder`, Swagger and the dependency injection composition root. The controller only calls the use case and returns `ProcessOrderResponse`. |
+
+Project references:
+
+- `Merjane.Domain`: none.
+- `Merjane.Application` -> `Merjane.Domain`.
+- `Merjane.Infrastructure` -> `Merjane.Application`, `Merjane.Domain`.
+- API -> `Merjane.Application`, `Merjane.Infrastructure`, and `Merjane.Domain` for the legacy `ProductService` only.
+- `Refacto.Dotnet.Controllers.Tests` -> all four projects. `Architecture/LayerDependencyTests` fails if the compiled Domain, Application or Infrastructure assembly references an outer layer, if Domain or Application references EF Core, or if any of them references ASP.NET Core.
+
+**Application ports.** The use case needs three things from outside: loading an order with its products and saving tracked changes (`IOrderProcessingStore`), sending notifications (`IProductNotificationPort`) and the current time (`IClock`). The interfaces are declared in Application and implemented by outer projects, so Application depends on Domain only. `IOrderProcessingStore` is specific to order processing, not a generic repository or unit of work, and stays synchronous like the original code.
+
+**EF Core persistence.** `EfOrderProcessingStore` runs the original tracked query (`Include(o => o.Items)` then `SingleOrDefault`) and its `SaveChanges()` calls `AppDbContext.SaveChanges()`. Products therefore keep the order returned by EF Core, and each product is still saved as soon as it is handled, without a transaction. The EF model, the `InMemoryDb` store and the existing registration lifetimes are the same as before the split.
+
+**Protected notification adapter.** `INotificationService` and `NotificationService` must not be modified or moved, so they stay in the API project. `ProductNotificationAdapter` implements `IProductNotificationPort` by forwarding each call unchanged to `INotificationService`; both are registered in `Program.cs`. The port mirrors the three protected methods, so notification types, arguments and order are unchanged, and Application never references `INotificationService`.
+
+**Compromises.**
+
+- The legacy `ProductService` keeps its public constructor `(INotificationService, AppDbContext)` and methods for its existing unit tests. It builds its own `ProductNotificationAdapter`, `EfOrderProcessingStore` and `SystemClock`, then calls the domain rules and the shared `ProductDecisionExecutor`, so no business rule is duplicated. It still depends on concrete Infrastructure types and on the system clock rather than on the ports, bypasses dependency injection (it is not registered) and is the only reason the API references `Merjane.Domain` directly.
+- Domain entities keep their persistence shape: mutable properties and mapping attributes from `System.ComponentModel.DataAnnotations` (`[Table]`, `[Column]`, `[Key]`). These come from the base class library, not EF Core.
+- `IOrderProcessingStore.SaveChanges()` relies on change tracking: an implementation must return tracked entities so that stock updates made on them are persisted.
+
+Build, test and run (Swagger UI at `http://localhost:5122/swagger` in the Development environment):
+
+```powershell
+dotnet build Refacto.DotNet.Controllers.sln
+dotnet test Refacto.DotNet.Controllers.sln
+dotnet run --project Refacto.DotNet.Controllers --launch-profile http
+```
 
 ### Running the tests
 
