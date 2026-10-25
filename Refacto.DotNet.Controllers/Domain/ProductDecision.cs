@@ -4,7 +4,8 @@ namespace Refacto.DotNet.Controllers.Domain
 {
     /// <summary>
     /// Outcome of an availability rule for one ordered product.
-    /// The notification, when present, must be sent before the stock update is applied and saved.
+    /// The notification, when present, is sent before the stock update is applied and saved,
+    /// as in the legacy out-of-stock and expiration paths.
     /// </summary>
     /// <param name="NewAvailable">Stock quantity to store, or <c>null</c> to leave it unchanged.</param>
     /// <param name="Notification">Customer notification to send, if any.</param>

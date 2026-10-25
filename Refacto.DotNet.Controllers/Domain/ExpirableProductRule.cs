@@ -17,6 +17,7 @@ namespace Refacto.DotNet.Controllers.Domain
 
         /// <summary>
         /// Compares the expiry date with the current time of day, unlike <see cref="Decide"/>.
+        /// The sell branch is only reachable when called directly: through <see cref="Decide"/>, the expiry date is never after <paramref name="now"/>.
         /// Throws <see cref="InvalidOperationException"/> when the product has no expiry date.
         /// </summary>
         public static ProductDecision DecideWhenNotSellable(Product product, DateTime now)
