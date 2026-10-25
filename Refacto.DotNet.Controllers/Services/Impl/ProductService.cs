@@ -10,7 +10,7 @@ namespace Refacto.DotNet.Controllers.Services.Impl
     public class ProductService
     {
         private readonly ProductDecisionExecutor _executor;
-        private readonly IClock _clock = new SystemClock();
+        private readonly SystemClock _clock = new();
 
         public ProductService(INotificationService ns, AppDbContext ctx)
         {

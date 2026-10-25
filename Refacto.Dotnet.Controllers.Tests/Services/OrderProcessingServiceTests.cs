@@ -7,7 +7,7 @@ using Refacto.DotNet.Controllers.Services.Impl;
 
 namespace Refacto.DotNet.Controllers.Tests.Services
 {
-    public class OrderProcessingServiceTests
+    public sealed class OrderProcessingServiceTests : IDisposable
     {
         private static readonly DateTime Now = new(2026, 6, 15, 14, 30, 0);
         private static readonly DateTime Today = Now.Date;
@@ -72,6 +72,11 @@ namespace Refacto.DotNet.Controllers.Tests.Services
 
             Assert.Equal(2, Reload(normal).Available);
             Assert.Equal(6, Reload(expired).Available);
+        }
+
+        public void Dispose()
+        {
+            _ctx.Dispose();
         }
 
         private Order Seed(params Product[] products)
