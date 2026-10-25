@@ -11,8 +11,10 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddScoped<ProductService>();
+builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<ProductDecisionExecutor>();
+builder.Services.AddScoped<OrderProcessingService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     _ = options.UseInMemoryDatabase($"InMemoryDb");
