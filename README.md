@@ -29,11 +29,11 @@ Merjane sells products online and keeps track of their stock. Every product has 
 |---|---|---|
 | `Merjane.Domain` | `Entities/Product.cs`, `Entities/Order.cs`, `NormalProductRule.cs`, `SeasonalProductRule.cs`, `ExpirableProductRule.cs`, `ProductAvailabilityRules.cs`, `ProductDecision.cs`, `ProductNotification.cs` | Entities and pure availability rules. The current time is a parameter; no EF Core, ASP.NET Core, clock or notification dependency. |
 | `Merjane.Application` | `OrderProcessingService.cs`, `ProductDecisionExecutor.cs`, `OrderNotFoundException.cs`, `Ports/IOrderProcessingStore.cs`, `Ports/IProductNotificationPort.cs`, `Ports/IClock.cs` | Order processing use case and the ports it needs. Loads the order, reads the clock once, then for each product sends the notification, updates stock and saves. |
-| `Merjane.Infrastructure` | `Persistence/AppDbContext.cs`, `Persistence/EfOrderProcessingStore.cs`, `SystemClock.cs`, `InfrastructureServiceCollectionExtensions.cs` | EF Core InMemory persistence and system clock, registered by `AddInfrastructure()`. |
+| `Merjane.Infrastructure` | `Persistence/AppDbContext.cs`, `Persistence/EfOrderProcessingStore.cs`, `Persistence/DemoDataSeeder.cs`, `SystemClock.cs`, `InfrastructureServiceCollectionExtensions.cs` | EF Core InMemory persistence and system clock, registered by `AddInfrastructure()`, plus the opt-in Development demo data. |
 | `Refacto.DotNet.Controllers` (API) | `Controllers/OrdersController.cs`, `Dtos/Product/ProcessOrderResponse.cs`, `Program.cs`, `Services/Impl/ProductNotificationAdapter.cs`, protected `Services/INotificationService.cs` and `Services/Impl/NotificationService.cs`, legacy `Services/Impl/ProductService.cs` | HTTP endpoint, Swagger and dependency injection composition root. Keeps its original name, assembly and namespaces. |
 | `Refacto.Dotnet.Controllers.Tests` | `Domain/`, `Services/`, `Controllers/`, `Architecture/` | Rule unit tests, use case and legacy service tests, HTTP integration tests and layer dependency tests. |
 
-The Domain, Application and Infrastructure projects generate XML documentation files; the API project does not, because its protected files cannot receive XML comments.
+All four production projects generate XML documentation files. The API's file feeds the Swagger operation and schema descriptions; the two protected notification files cannot receive XML comments, so `Refacto.DotNet.Controllers/.editorconfig` disables the missing-comment warning (CS1591) for those two files only.
 
 **Protected notification adapter.** `INotificationService` and `NotificationService` are marked `// WARN: Should not be changed during the exercise`, so they stay unchanged in the API project. Application declares its own `IProductNotificationPort`, mirroring the three protected methods, and `ProductNotificationAdapter` forwards each call unchanged to `INotificationService`. Notification types, arguments and order are therefore preserved, and Application never references the API.
 
@@ -97,7 +97,15 @@ Endpoint: `POST /orders/{orderId}/processOrder`, no request body. On success it 
 {"id":1}
 ```
 
-The application uses an EF Core in-memory database (`InMemoryDb`) that starts empty and is lost on restart, and no endpoint creates orders. A manual call therefore returns HTTP 500 for any identifier, like an unknown order; the integration tests seed data to exercise the real behavior.
+The application uses an EF Core in-memory database (`InMemoryDb`) that starts empty and is lost on restart, and no endpoint creates orders. With the default profiles, a manual call therefore returns HTTP 500 for any identifier, like an unknown order; the integration tests seed their own isolated data.
+
+**Demo data for manual testing.** The `http-demo` launch profile sets `ASPNETCORE_ENVIRONMENT=Development` and `DemoData__Seed=true`:
+
+```powershell
+dotnet run --project Refacto.DotNet.Controllers --launch-profile http-demo
+```
+
+At startup, and only in Development with `DemoData:Seed` set to `true` (disabled by default), `DemoDataSeeder` adds order 1 with three sellable products: a `NORMAL` product (stock 5), a `SEASONAL` product in season (stock 3) and an `EXPIRABLE` product expiring in 30 days (stock 4). `POST /orders/1/processOrder` then returns HTTP 200 with `{"id":1}` and removes one unit of each product, without notification. Each call removes another unit, and the data disappears when the application stops.
 
 ## 9. Running tests
 
@@ -105,7 +113,7 @@ The application uses an EF Core in-memory database (`InMemoryDb`) that starts em
 dotnet test Refacto.DotNet.Controllers.sln --no-restore
 ```
 
-76 tests, none of which contacts an external service.
+82 tests, none of which contacts an external service.
 
 Date handling in tests:
 
@@ -123,10 +131,11 @@ Date handling in tests:
 | `Services/OrderProcessingServiceTests` | 6 |
 | `Services/ProductServiceTests` | 6 |
 | `Architecture/LayerDependencyTests` | 3 |
+| `Infrastructure/DemoDataSeederTests` (seed content, idempotence, Development-only opt-in) | 6 |
 
 ## 10. Test coverage
 
-Measured with coverlet (`dotnet test --collect:"XPlat Code Coverage"`), which writes a Cobertura report:
+Measured with coverlet (`dotnet test --collect:"XPlat Code Coverage"`), which writes a Cobertura report. These figures were measured on the 76 tests, before the demo data seeder and its tests were added:
 
 - Handwritten code: 96.8% of lines (210/217) and 96.8% of branches (60/62). Domain and Infrastructure are fully covered.
 - Uncovered handwritten code: the protected no-op `NotificationService`, which is always mocked; the executor's defensive branch for an unknown notification type; the non-Development branch of `Program.cs`.

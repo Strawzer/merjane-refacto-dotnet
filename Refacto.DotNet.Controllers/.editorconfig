@@ -1,0 +1,6 @@
+# The protected exercise files must stay byte-identical, so they cannot receive XML documentation.
+[Services/INotificationService.cs]
+dotnet_diagnostic.CS1591.severity = none
+
+[Services/Impl/NotificationService.cs]
+dotnet_diagnostic.CS1591.severity = none
