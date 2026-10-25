@@ -1,6 +1,5 @@
 ﻿using Merjane.Domain.Entities;
 using Merjane.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Moq;
 using Moq.EntityFrameworkCore;
 using Refacto.DotNet.Controllers.Services;
@@ -8,24 +7,22 @@ using Refacto.DotNet.Controllers.Services.Impl;
 
 namespace Refacto.DotNet.Controllers.Tests.Services
 {
-    public class MyUnitTests
+    public class ProductServiceTests
     {
         private readonly Mock<INotificationService> _mockNotificationService;
         private readonly Mock<AppDbContext> _mockDbContext;
-        private readonly Mock<DbSet<Product>> _mockDbSet;
         private readonly ProductService _productService;
 
-        public MyUnitTests()
+        public ProductServiceTests()
         {
             _mockNotificationService = new Mock<INotificationService>();
             _mockDbContext = new Mock<AppDbContext>();
-            _mockDbSet = new Mock<DbSet<Product>>();
             _ = _mockDbContext.Setup(x => x.Products).ReturnsDbSet(Array.Empty<Product>());
             _productService = new ProductService(_mockNotificationService.Object, _mockDbContext.Object);
         }
 
         [Fact]
-        public void Test()
+        public void NotifyDelay_SendsDelayNotificationAndSavesWithoutChangingStock()
         {
             // GIVEN
             Product product = new()

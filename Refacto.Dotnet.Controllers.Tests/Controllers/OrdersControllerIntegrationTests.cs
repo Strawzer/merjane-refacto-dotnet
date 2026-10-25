@@ -11,9 +11,10 @@ using Refacto.DotNet.Controllers.Services;
 namespace Refacto.Dotnet.Controllers.Tests.Controllers
 {
     [Collection("Sequential")]
-    public class MyControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+    public sealed class OrdersControllerIntegrationTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
     {
         private readonly WebApplicationFactory<Program> _factory;
+        private readonly IServiceScope _scope;
         private readonly AppDbContext _context;
         private readonly Mock<INotificationService> _mockNotificationService;
         private readonly Mock<IClock> _mockClock;
@@ -21,7 +22,7 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
         private static readonly DateTime Now = new(2026, 6, 15, 14, 30, 0);
         private static DateTime Today => Now.Date;
 
-        public MyControllerIntegrationTests(WebApplicationFactory<Program> factory)
+        public OrdersControllerIntegrationTests(WebApplicationFactory<Program> factory)
         {
             _mockNotificationService = new Mock<INotificationService>();
             _mockClock = new Mock<IClock>();
@@ -31,7 +32,6 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
             {
                 _ = builder.ConfigureServices(services =>
                 {
-                    _ = services.AddSingleton(_mockNotificationService.Object);
                     _ = services.AddSingleton(_mockClock.Object);
 
                     ServiceDescriptor? descriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
@@ -40,26 +40,29 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
                         _ = services.Remove(descriptor);
                     }
 
-                    // Add ApplicationDbContext using an in-memory database for testing
+                    // Add AppDbContext using an in-memory database for testing
                     _ = services.AddDbContext<AppDbContext>(options =>
                     {
                         _ = options.UseInMemoryDatabase($"InMemoryDbForTesting-{GetType()}");
                     });
-                    _ = services.AddScoped((_sp) => _mockNotificationService.Object);
-
-
-                    ServiceProvider sp = services.BuildServiceProvider();
+                    _ = services.AddScoped(_ => _mockNotificationService.Object);
                 });
             });
 
-            IServiceScope scope = _factory.Services.CreateScope();
-            _context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            _scope = _factory.Services.CreateScope();
+            _context = _scope.ServiceProvider.GetRequiredService<AppDbContext>();
             _context.Database.EnsureDeleted();
             _context.Database.EnsureCreated();
         }
 
+        public void Dispose()
+        {
+            _scope.Dispose();
+            _factory.Dispose();
+        }
+
         [Fact]
-        public async Task ProcessOrderShouldReturn()
+        public async Task ProcessOrder_WithEveryProductType_ReturnsOrderId()
         {
             HttpClient client = _factory.CreateClient();
 
@@ -320,11 +323,12 @@ namespace Refacto.Dotnet.Controllers.Tests.Controllers
 
             await ProcessOrderAsync(products.ToArray());
 
+            int[] expectedAvailableByProduct = [29, 0, 29, 0, 29, 30];
             List<int> availableByProduct = await _context.Products.AsNoTracking()
                 .OrderBy(p => p.Id)
                 .Select(p => p.Available)
                 .ToListAsync();
-            Assert.Equal(new[] { 29, 0, 29, 0, 29, 30 }, availableByProduct);
+            Assert.Equal(expectedAvailableByProduct, availableByProduct);
             _mockNotificationService.Verify(s => s.SendDelayNotification(10, "USB Dongle"), Times.Once());
             _mockNotificationService.Verify(s => s.SendExpirationNotification("Milk", products[3].ExpiryDate!.Value), Times.Once());
             _mockNotificationService.Verify(s => s.SendOutOfStockNotification("Grapes"), Times.Once());

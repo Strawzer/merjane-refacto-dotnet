@@ -12,7 +12,7 @@ namespace Merjane.Infrastructure
             _ = services.AddSingleton<IClock, SystemClock>();
             _ = services.AddDbContext<AppDbContext>(options =>
             {
-                _ = options.UseInMemoryDatabase($"InMemoryDb");
+                _ = options.UseInMemoryDatabase("InMemoryDb");
             });
             _ = services.AddScoped<IOrderProcessingStore, EfOrderProcessingStore>();
             return services;
