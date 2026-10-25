@@ -1,11 +1,10 @@
 using Merjane.Application;
 using Merjane.Application.Ports;
 using Merjane.Domain.Entities;
+using Merjane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
-using Refacto.DotNet.Controllers.Database;
-using Refacto.DotNet.Controllers.Database.Context;
 using Refacto.DotNet.Controllers.Services;
 using Refacto.DotNet.Controllers.Services.Impl;
 

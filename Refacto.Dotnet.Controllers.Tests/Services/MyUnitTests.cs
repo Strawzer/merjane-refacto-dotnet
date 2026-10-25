@@ -1,8 +1,8 @@
 ﻿using Merjane.Domain.Entities;
+using Merjane.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using Moq.EntityFrameworkCore;
-using Refacto.DotNet.Controllers.Database.Context;
 using Refacto.DotNet.Controllers.Services;
 using Refacto.DotNet.Controllers.Services.Impl;
 

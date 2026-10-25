@@ -1,11 +1,11 @@
 ﻿using System.Net;
 using Merjane.Application.Ports;
 using Merjane.Domain.Entities;
+using Merjane.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
-using Refacto.DotNet.Controllers.Database.Context;
 using Refacto.DotNet.Controllers.Services;
 
 namespace Refacto.Dotnet.Controllers.Tests.Controllers

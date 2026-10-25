@@ -1,7 +1,7 @@
 ﻿using Merjane.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Refacto.DotNet.Controllers.Database.Context
+namespace Merjane.Infrastructure.Persistence
 {
     public class AppDbContext : DbContext
     {

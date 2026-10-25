@@ -1,9 +1,8 @@
 using Merjane.Application.Ports;
 using Merjane.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
-using Refacto.DotNet.Controllers.Database.Context;
 
-namespace Refacto.DotNet.Controllers.Database
+namespace Merjane.Infrastructure.Persistence
 {
     public class EfOrderProcessingStore : IOrderProcessingStore
     {

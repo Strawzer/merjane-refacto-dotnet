@@ -1,6 +1,6 @@
 using Merjane.Application.Ports;
 
-namespace Refacto.DotNet.Controllers.Services.Impl
+namespace Merjane.Infrastructure
 {
     public class SystemClock : IClock
     {

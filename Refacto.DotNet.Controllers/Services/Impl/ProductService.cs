@@ -1,8 +1,8 @@
 ﻿using Merjane.Application;
 using Merjane.Domain;
 using Merjane.Domain.Entities;
-using Refacto.DotNet.Controllers.Database;
-using Refacto.DotNet.Controllers.Database.Context;
+using Merjane.Infrastructure;
+using Merjane.Infrastructure.Persistence;
 
 namespace Refacto.DotNet.Controllers.Services.Impl
 {
