@@ -1,19 +1,18 @@
+using Merjane.Application.Ports;
 using Merjane.Domain;
 using Merjane.Domain.Entities;
-using Microsoft.EntityFrameworkCore;
-using Refacto.DotNet.Controllers.Database.Context;
 
-namespace Refacto.DotNet.Controllers.Services.Impl
+namespace Merjane.Application
 {
     public class OrderProcessingService
     {
-        private readonly AppDbContext _ctx;
+        private readonly IOrderProcessingStore _store;
         private readonly ProductDecisionExecutor _executor;
         private readonly IClock _clock;
 
-        public OrderProcessingService(AppDbContext ctx, ProductDecisionExecutor executor, IClock clock)
+        public OrderProcessingService(IOrderProcessingStore store, ProductDecisionExecutor executor, IClock clock)
         {
-            _ctx = ctx;
+            _store = store;
             _executor = executor;
             _clock = clock;
         }
@@ -24,9 +23,7 @@ namespace Refacto.DotNet.Controllers.Services.Impl
         /// <exception cref="OrderNotFoundException">The order does not exist.</exception>
         public long ProcessOrder(long orderId)
         {
-            Order order = _ctx.Orders
-                .Include(o => o.Items)
-                .SingleOrDefault(o => o.Id == orderId)
+            Order order = _store.FindOrderWithProducts(orderId)
                 ?? throw new OrderNotFoundException(orderId);
 
             DateTime now = _clock.Now;

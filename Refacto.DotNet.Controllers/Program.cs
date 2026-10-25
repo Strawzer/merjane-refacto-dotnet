@@ -1,4 +1,7 @@
+using Merjane.Application;
+using Merjane.Application.Ports;
 using Microsoft.EntityFrameworkCore;
+using Refacto.DotNet.Controllers.Database;
 using Refacto.DotNet.Controllers.Database.Context;
 using Refacto.DotNet.Controllers.Services;
 using Refacto.DotNet.Controllers.Services.Impl;
@@ -13,6 +16,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IProductNotificationPort, ProductNotificationAdapter>();
+builder.Services.AddScoped<IOrderProcessingStore, EfOrderProcessingStore>();
 builder.Services.AddScoped<ProductDecisionExecutor>();
 builder.Services.AddScoped<OrderProcessingService>();
 builder.Services.AddDbContext<AppDbContext>(options =>

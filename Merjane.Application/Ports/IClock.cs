@@ -1,4 +1,4 @@
-namespace Refacto.DotNet.Controllers.Services
+namespace Merjane.Application.Ports
 {
     public interface IClock
     {

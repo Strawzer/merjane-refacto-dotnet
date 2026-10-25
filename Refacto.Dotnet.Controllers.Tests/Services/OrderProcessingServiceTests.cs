@@ -1,7 +1,10 @@
+using Merjane.Application;
+using Merjane.Application.Ports;
 using Merjane.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
+using Refacto.DotNet.Controllers.Database;
 using Refacto.DotNet.Controllers.Database.Context;
 using Refacto.DotNet.Controllers.Services;
 using Refacto.DotNet.Controllers.Services.Impl;
@@ -27,7 +30,8 @@ namespace Refacto.DotNet.Controllers.Tests.Services
             _ctx = new AppDbContext(options);
             Mock<IClock> clock = new();
             _ = clock.Setup(c => c.Now).Returns(Now);
-            _service = new OrderProcessingService(_ctx, new ProductDecisionExecutor(_mockNotificationService.Object, _ctx), clock.Object);
+            EfOrderProcessingStore store = new(_ctx);
+            _service = new OrderProcessingService(store, new ProductDecisionExecutor(new ProductNotificationAdapter(_mockNotificationService.Object), store), clock.Object);
         }
 
         [Fact]

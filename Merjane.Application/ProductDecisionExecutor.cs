@@ -1,21 +1,21 @@
+using Merjane.Application.Ports;
 using Merjane.Domain;
 using Merjane.Domain.Entities;
-using Refacto.DotNet.Controllers.Database.Context;
 
-namespace Refacto.DotNet.Controllers.Services.Impl
+namespace Merjane.Application
 {
     /// <summary>
     /// Applies a <see cref="ProductDecision"/>: sends its notification, updates stock, then saves the product immediately.
     /// </summary>
     public class ProductDecisionExecutor
     {
-        private readonly INotificationService _notificationService;
-        private readonly AppDbContext _ctx;
+        private readonly IProductNotificationPort _notifications;
+        private readonly IOrderProcessingStore _store;
 
-        public ProductDecisionExecutor(INotificationService notificationService, AppDbContext ctx)
+        public ProductDecisionExecutor(IProductNotificationPort notifications, IOrderProcessingStore store)
         {
-            _notificationService = notificationService;
-            _ctx = ctx;
+            _notifications = notifications;
+            _store = store;
         }
 
         public void Execute(Product product, ProductDecision decision)
@@ -32,7 +32,7 @@ namespace Refacto.DotNet.Controllers.Services.Impl
 
             if (decision.RequiresSave)
             {
-                _ = _ctx.SaveChanges();
+                _store.SaveChanges();
             }
         }
 
@@ -41,13 +41,13 @@ namespace Refacto.DotNet.Controllers.Services.Impl
             switch (notification)
             {
                 case DelayNotification delay:
-                    _notificationService.SendDelayNotification(delay.LeadTime, delay.ProductName);
+                    _notifications.SendDelayNotification(delay.LeadTime, delay.ProductName);
                     break;
                 case OutOfStockNotification outOfStock:
-                    _notificationService.SendOutOfStockNotification(outOfStock.ProductName);
+                    _notifications.SendOutOfStockNotification(outOfStock.ProductName);
                     break;
                 case ExpirationNotification expiration:
-                    _notificationService.SendExpirationNotification(expiration.ProductName, expiration.ExpiryDate);
+                    _notifications.SendExpirationNotification(expiration.ProductName, expiration.ExpiryDate);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(notification), notification.GetType().Name, "Unsupported notification.");

@@ -1,5 +1,7 @@
-﻿using Merjane.Domain;
+﻿using Merjane.Application;
+using Merjane.Domain;
 using Merjane.Domain.Entities;
+using Refacto.DotNet.Controllers.Database;
 using Refacto.DotNet.Controllers.Database.Context;
 
 namespace Refacto.DotNet.Controllers.Services.Impl
@@ -14,7 +16,7 @@ namespace Refacto.DotNet.Controllers.Services.Impl
 
         public ProductService(INotificationService ns, AppDbContext ctx)
         {
-            _executor = new ProductDecisionExecutor(ns, ctx);
+            _executor = new ProductDecisionExecutor(new ProductNotificationAdapter(ns), new EfOrderProcessingStore(ctx));
         }
 
         public void NotifyDelay(int leadTime, Product p)
