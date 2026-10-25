@@ -1,58 +1,36 @@
 ﻿using Refacto.DotNet.Controllers.Database.Context;
+using Refacto.DotNet.Controllers.Domain;
 using Refacto.DotNet.Controllers.Entities;
 
 namespace Refacto.DotNet.Controllers.Services.Impl
 {
+    /// <summary>
+    /// Legacy entry points kept for compatibility. Order processing goes through <see cref="OrderProcessingService"/>.
+    /// </summary>
     public class ProductService
     {
-        private readonly INotificationService _ns;
-        private readonly AppDbContext _ctx;
+        private readonly ProductDecisionExecutor _executor;
+        private readonly IClock _clock = new SystemClock();
 
         public ProductService(INotificationService ns, AppDbContext ctx)
         {
-            _ns = ns;
-            _ctx = ctx;
+            _executor = new ProductDecisionExecutor(ns, ctx);
         }
 
         public void NotifyDelay(int leadTime, Product p)
         {
             p.LeadTime = leadTime;
-            _ = _ctx.SaveChanges();
-            _ns.SendDelayNotification(leadTime, p.Name);
+            _executor.Execute(p, ProductDecision.NotifyDelay(p));
         }
 
         public void HandleSeasonalProduct(Product p)
         {
-            if (DateTime.Now.AddDays(p.LeadTime) > p.SeasonEndDate)
-            {
-                _ns.SendOutOfStockNotification(p.Name);
-                p.Available = 0;
-                _ = _ctx.SaveChanges();
-            }
-            else if (p.SeasonStartDate > DateTime.Now)
-            {
-                _ns.SendOutOfStockNotification(p.Name);
-                _ = _ctx.SaveChanges();
-            }
-            else
-            {
-                NotifyDelay(p.LeadTime, p);
-            }
+            _executor.Execute(p, SeasonalProductRule.DecideWhenNotSellable(p, _clock.Now));
         }
 
         public void HandleExpiredProduct(Product p)
         {
-            if (p.Available > 0 && p.ExpiryDate > DateTime.Now)
-            {
-                p.Available -= 1;
-                _ = _ctx.SaveChanges();
-            }
-            else
-            {
-                _ns.SendExpirationNotification(p.Name, (DateTime)p.ExpiryDate);
-                p.Available = 0;
-                _ = _ctx.SaveChanges();
-            }
+            _executor.Execute(p, ExpirableProductRule.DecideWhenNotSellable(p, _clock.Now));
         }
     }
 }
