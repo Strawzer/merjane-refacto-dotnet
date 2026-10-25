@@ -7,12 +7,13 @@ using Merjane.Infrastructure.Persistence;
 namespace Refacto.DotNet.Controllers.Services.Impl
 {
     /// <summary>
-    /// Legacy entry points kept for compatibility. Order processing goes through <see cref="OrderProcessingService"/>.
+    /// Legacy product entry points. Order processing goes through <see cref="OrderProcessingService"/>.
     /// </summary>
     /// <remarks>
-    /// Not registered in dependency injection and not used by the API. Its public signatures are kept for existing callers;
-    /// it composes its dependencies itself and delegates to the domain rules and <see cref="ProductDecisionExecutor"/>,
-    /// so it shares the order processing behavior. This is why the API project still references the domain project.
+    /// Not registered in dependency injection and not used by the API; kept for the existing legacy test scenarios.
+    /// Method names and parameter shapes are unchanged, but the parameter types moved to other namespaces and assemblies,
+    /// so source and binary compatibility are not guaranteed for external callers. It composes its dependencies itself and
+    /// delegates to the domain rules and <see cref="ProductDecisionExecutor"/>, so it shares the order processing behavior. This is why the API project still references the domain project.
     /// </remarks>
     public class ProductService
     {
@@ -33,8 +34,9 @@ namespace Refacto.DotNet.Controllers.Services.Impl
         /// Sets the product's lead time, sends a delay notification with it and saves.
         /// </summary>
         /// <remarks>
-        /// The notification is now sent before the save; the original code saved first. Only a product with other
-        /// unsaved changes can observe the difference.
+        /// The notification is now sent before the save; the original code saved first. Successful calls have the same
+        /// outcome, but the difference is observable when a call fails: if the notification fails, the new lead time is
+        /// not saved; if the save fails, the notification has already been sent.
         /// </remarks>
         /// <param name="leadTime">New lead time in days.</param>
         /// <param name="p">Tracked product.</param>
