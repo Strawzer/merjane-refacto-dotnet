@@ -1,3 +1,5 @@
+# Merjane order processing (refactoring exercise)
+
 ### Consignes .NET: 
 * Ignorez les migrations BDD
 * Ne pas modifier les classes qui ont un commentaire: `// WARN: Should not be changed during the exercise
@@ -6,81 +8,142 @@
 
 ---
 
-## Refactoring notes
+## 1. Project overview
 
-### Architecture
+A small ASP.NET Core API that processes customer orders: for each ordered product it decides whether one unit can be sold, updates the stock and sends the matching customer notification. The legacy controller-centric code was covered by characterization tests, refactored, migrated to .NET 10 and split into four projects, without changing its observable behavior.
 
-The production code is split into four `net10.0` projects. The API project keeps its original name, assembly and namespaces (`Refacto.DotNet.Controllers`) for compatibility.
+## 2. Business context
+
+Merjane sells products online and keeps track of their stock. Every product has a stock (`Available`) and a replenishment lead time in days (`LeadTime`). Processing an order removes one unit of each ordered product, but some products have availability constraints: seasonal products are only sold during their season and expirable products are no longer sold once expired. When a product cannot be sold, customers are notified of a delay, an unavailability or an expiration.
+
+## 3. Tech stack
+
+- .NET 10 (`net10.0`), SDK selected by `global.json` (10.0.102, `rollForward: latestFeature`)
+- ASP.NET Core 10 controllers, Swashbuckle.AspNetCore 10.3.1 (Swagger UI), Microsoft.AspNetCore.OpenApi 10.0.13
+- EF Core 10.0.13 with the InMemory provider
+- Tests: xUnit 2.4.2, Moq 4.20.2, Moq.EntityFrameworkCore 7.0.0.2, Microsoft.AspNetCore.Mvc.Testing 10.0.13, coverlet.collector 10.1.0
+
+## 4. Solution architecture
 
 | Project | Main files | Responsibility |
 |---|---|---|
-| `Merjane.Domain` | `Entities/Product.cs`, `Entities/Order.cs`, `NormalProductRule.cs`, `SeasonalProductRule.cs`, `ExpirableProductRule.cs`, `ProductAvailabilityRules.cs`, `ProductDecision.cs`, `ProductNotification.cs` | Entities and pure business decisions per product type. The current time is a parameter; no EF Core, ASP.NET Core, clock or notification dependency. |
-| `Merjane.Application` | `OrderProcessingService.cs`, `ProductDecisionExecutor.cs`, `OrderNotFoundException.cs`, `Ports/IOrderProcessingStore.cs`, `Ports/IProductNotificationPort.cs`, `Ports/IClock.cs` | Order processing use case: loads the order, reads the clock once, applies the rule of each product, then sends the notification, updates stock and saves, product by product. |
+| `Merjane.Domain` | `Entities/Product.cs`, `Entities/Order.cs`, `NormalProductRule.cs`, `SeasonalProductRule.cs`, `ExpirableProductRule.cs`, `ProductAvailabilityRules.cs`, `ProductDecision.cs`, `ProductNotification.cs` | Entities and pure availability rules. The current time is a parameter; no EF Core, ASP.NET Core, clock or notification dependency. |
+| `Merjane.Application` | `OrderProcessingService.cs`, `ProductDecisionExecutor.cs`, `OrderNotFoundException.cs`, `Ports/IOrderProcessingStore.cs`, `Ports/IProductNotificationPort.cs`, `Ports/IClock.cs` | Order processing use case and the ports it needs. Loads the order, reads the clock once, then for each product sends the notification, updates stock and saves. |
 | `Merjane.Infrastructure` | `Persistence/AppDbContext.cs`, `Persistence/EfOrderProcessingStore.cs`, `SystemClock.cs`, `InfrastructureServiceCollectionExtensions.cs` | EF Core InMemory persistence and system clock, registered by `AddInfrastructure()`. |
-| `Refacto.DotNet.Controllers` (API) | `Controllers/OrdersController.cs`, `Dtos/`, `Program.cs`, `Services/Impl/ProductNotificationAdapter.cs`, protected `Services/INotificationService.cs` and `Services/Impl/NotificationService.cs`, legacy `Services/Impl/ProductService.cs` | `POST /orders/{orderId}/processOrder`, Swagger and the dependency injection composition root. The controller only calls the use case and returns `ProcessOrderResponse`. |
+| `Refacto.DotNet.Controllers` (API) | `Controllers/OrdersController.cs`, `Dtos/Product/ProcessOrderResponse.cs`, `Program.cs`, `Services/Impl/ProductNotificationAdapter.cs`, protected `Services/INotificationService.cs` and `Services/Impl/NotificationService.cs`, legacy `Services/Impl/ProductService.cs` | HTTP endpoint, Swagger and dependency injection composition root. Keeps its original name, assembly and namespaces. |
+| `Refacto.Dotnet.Controllers.Tests` | `Domain/`, `Services/`, `Controllers/`, `Architecture/` | Rule unit tests, use case and legacy service tests, HTTP integration tests and layer dependency tests. |
 
-Project references:
+The Domain, Application and Infrastructure projects generate XML documentation files; the API project does not, because its protected files cannot receive XML comments.
 
-- `Merjane.Domain`: none.
-- `Merjane.Application` -> `Merjane.Domain`.
-- `Merjane.Infrastructure` -> `Merjane.Application`, `Merjane.Domain`.
-- API -> `Merjane.Application`, `Merjane.Infrastructure`, and `Merjane.Domain` for the legacy `ProductService` only.
-- `Refacto.Dotnet.Controllers.Tests` -> all four projects. `Architecture/LayerDependencyTests` fails if the compiled Domain, Application or Infrastructure assembly references an outer layer, if Domain or Application references EF Core, or if any of them references ASP.NET Core.
+**Protected notification adapter.** `INotificationService` and `NotificationService` are marked `// WARN: Should not be changed during the exercise`, so they stay unchanged in the API project. Application declares its own `IProductNotificationPort`, mirroring the three protected methods, and `ProductNotificationAdapter` forwards each call unchanged to `INotificationService`. Notification types, arguments and order are therefore preserved, and Application never references the API.
 
-**Application ports.** The use case needs three things from outside: loading an order with its products and saving tracked changes (`IOrderProcessingStore`), sending notifications (`IProductNotificationPort`) and the current time (`IClock`). The interfaces are declared in Application and implemented by outer projects, so Application depends on Domain only. `IOrderProcessingStore` is specific to order processing, not a generic repository or unit of work, and stays synchronous like the original code.
+**Legacy `ProductService`.** Its public constructor `(INotificationService, AppDbContext)` and methods are kept for existing callers and tests. It builds its own adapter, `EfOrderProcessingStore` and `SystemClock`, then calls the domain rules and the shared `ProductDecisionExecutor`, so no business rule is duplicated. As a compromise, it depends on concrete Infrastructure types, is not registered in dependency injection, and is the only reason the API references `Merjane.Domain`.
 
-**EF Core persistence.** `EfOrderProcessingStore` runs the original tracked query (`Include(o => o.Items)` then `SingleOrDefault`) and its `SaveChanges()` calls `AppDbContext.SaveChanges()`. Products therefore keep the order returned by EF Core, and each product is still saved as soon as it is handled, without a transaction. The EF model, the `InMemoryDb` store and the existing registration lifetimes are the same as before the split.
+## 5. Dependency direction
 
-**Protected notification adapter.** `INotificationService` and `NotificationService` must not be modified or moved, so they stay in the API project. `ProductNotificationAdapter` implements `IProductNotificationPort` by forwarding each call unchanged to `INotificationService`; both are registered in `Program.cs`. The port mirrors the three protected methods, so notification types, arguments and order are unchanged, and Application never references `INotificationService`.
+```mermaid
+graph LR
+    API[Refacto.DotNet.Controllers] --> Application[Merjane.Application]
+    API --> Infrastructure[Merjane.Infrastructure]
+    API -. legacy ProductService only .-> Domain[Merjane.Domain]
+    Infrastructure --> Application
+    Infrastructure --> Domain
+    Application --> Domain
+```
 
-**Compromises.**
+`Merjane.Domain` references no other project. The tests reference all four projects. `Architecture/LayerDependencyTests` fails if the compiled Domain, Application or Infrastructure assembly references an outer layer, if Domain or Application references EF Core, or if any of them references ASP.NET Core.
 
-- The legacy `ProductService` keeps its public constructor `(INotificationService, AppDbContext)` and methods for its existing unit tests. It builds its own `ProductNotificationAdapter`, `EfOrderProcessingStore` and `SystemClock`, then calls the domain rules and the shared `ProductDecisionExecutor`, so no business rule is duplicated. It still depends on concrete Infrastructure types and on the system clock rather than on the ports, bypasses dependency injection (it is not registered) and is the only reason the API references `Merjane.Domain` directly.
-- Domain entities keep their persistence shape: mutable properties and mapping attributes from `System.ComponentModel.DataAnnotations` (`[Table]`, `[Column]`, `[Key]`). These come from the base class library, not EF Core.
-- `IOrderProcessingStore.SaveChanges()` relies on change tracking: an implementation must return tracked entities so that stock updates made on them are persisted.
+## 6. Business rules
 
-Build, test and run (Swagger UI at `http://localhost:5122/swagger` in the Development environment):
+Each ordered product is evaluated against the time captured once for the order. Product types match exactly and case-sensitively; any other type leaves the product untouched.
+
+| Type | Sold (stock minus one) when | Otherwise |
+|---|---|---|
+| `NORMAL` | stock > 0 | lead time > 0: delay notification, stock unchanged. Otherwise nothing happens. |
+| `SEASONAL` | stock > 0 and today's date strictly between season start and end | Compared with the current time of day, in this order: replenishment (now + lead time) ending after the season end clears the stock with an out-of-stock notification; a season starting later keeps the stock with an out-of-stock notification; otherwise a delay notification. |
+| `EXPIRABLE` | stock > 0 and expiry date strictly after today's date | Stock set to 0 with an expiration notification, even when the product is only out of stock. A missing expiry date throws `InvalidOperationException`. |
+
+Each product is fully handled (notification, stock update, save) before the next one, without a transaction.
+
+## 7. Getting started
+
+Requirements: a .NET 10 SDK matching `global.json`. No database or external service is needed.
 
 ```powershell
-dotnet build Refacto.DotNet.Controllers.sln
-dotnet test Refacto.DotNet.Controllers.sln
+git clone https://github.com/Strawzer/merjane-refacto-dotnet.git
+cd merjane-refacto-dotnet
+dotnet restore Refacto.DotNet.Controllers.sln
+```
+
+## 8. Build and run
+
+```powershell
+dotnet build Refacto.DotNet.Controllers.sln --no-restore
 dotnet run --project Refacto.DotNet.Controllers --launch-profile http
 ```
 
-### Running the tests
+The `http` profile listens on `http://localhost:5122` in the Development environment and opens Swagger UI at `http://localhost:5122/swagger` (the `https` profile adds `https://localhost:7035`). Swagger is only enabled in Development.
 
-The projects target `net10.0` (EF Core 10, ASP.NET Core 10) and require the .NET 10 SDK:
+Endpoint: `POST /orders/{orderId}/processOrder`, no request body. On success it returns HTTP 200 with:
 
-```powershell
-dotnet test
+```json
+{"id":1}
 ```
 
-Date-dependent tests use a fixed clock and do not depend on the system date. The assessment delivery on `net7.0` is tagged `merjane-assessment-baseline-73tests`.
+The application uses an EF Core in-memory database (`InMemoryDb`) that starts empty and is lost on restart, and no endpoint creates orders. A manual call therefore returns HTTP 500 for any identifier, like an unknown order; the integration tests seed data to exercise the real behavior.
 
-### Preserved legacy behaviors
+## 9. Running tests
 
-These behaviors are covered by tests and intentionally kept, even where they look questionable:
+```powershell
+dotnet test Refacto.DotNet.Controllers.sln --no-restore
+```
 
-- An unknown order returns HTTP 500 (now through an explicit `OrderNotFoundException` instead of a `NullReferenceException`).
-- Each ordered product decreases stock by exactly one unit; orders carry no quantity.
-- NORMAL out of stock with a lead time of 0 sends no notification.
-- SEASONAL products are sold only strictly between the season start and end dates compared to today's date, so they are not sold on the first or last day of the season.
-- SEASONAL products that cannot be sold compare season dates with the current time of day: replenishment ending after the season end clears the stock and sends an out-of-stock notification; a season starting later sends an out-of-stock notification and keeps the stock; otherwise (including missing season dates) a delay notification is sent.
-- EXPIRABLE products are sold while the expiry date is after today's date; a product expiring later today is still sold.
-- EXPIRABLE products out of stock but not expired send an expiration notification and keep a stock of 0.
-- EXPIRABLE products without an expiry date fail with `InvalidOperationException`, stopping the order.
-- Unknown product types are ignored.
-- Each product is saved as soon as it is handled, without a transaction: a failure on one product keeps earlier products saved and leaves later products untouched.
+76 tests, none of which contacts an external service. Date-dependent tests use a fixed clock.
 
-### Intentional differences from the original implementation
+| Test class | Tests |
+|---|---|
+| `Controllers/OrdersControllerIntegrationTests` (HTTP, `WebApplicationFactory`, InMemory database) | 24 |
+| `Domain/SeasonalProductRuleTests` | 18 |
+| `Domain/ExpirableProductRuleTests` | 9 |
+| `Domain/ProductAvailabilityRulesTests` | 6 |
+| `Domain/NormalProductRuleTests` | 4 |
+| `Services/OrderProcessingServiceTests` | 6 |
+| `Services/ProductServiceTests` | 6 |
+| `Architecture/LayerDependencyTests` | 3 |
 
-- Notifications are always sent before the stock update and save. The original delay path saved before notifying; that save never had pending changes during order processing, so stored data and notifications are unchanged, but a direct `ProductService.NotifyDelay` call on an entity with unsaved changes would now notify before persisting them.
-- The clock is read once per order instead of several times per product, which only differs from the original for a request running across midnight.
-- The explicit `EntityState.Modified` marking of the NORMAL branch was dropped; tracked change detection persists the same values (on a relational database only the changed column would be updated).
+## 10. Test coverage
+
+Measured with coverlet (`dotnet test --collect:"XPlat Code Coverage"`):
+
+- Handwritten code: 96.8% of lines (210/217) and 96.8% of branches (60/62). Domain and Infrastructure are fully covered.
+- Uncovered handwritten code: the protected no-op `NotificationService`, which is always mocked; the executor's defensive branch for an unknown notification type; the non-Development branch of `Program.cs`.
+- Raw total, including code generated by the Microsoft.AspNetCore.OpenApi source generator: 29.9% of lines. That generated code is not exercised because the application serves Swagger through Swashbuckle.
+
+## 11. Behavior-preservation decisions
+
+The refactoring kept the observable behavior, including these surprising cases, because they are covered by characterization tests and changing them would be a business decision rather than a refactoring:
+
+- An unknown order returns HTTP 500, now through `OrderNotFoundException` instead of a `NullReferenceException`.
+- Each ordered product removes exactly one unit; orders carry no quantity.
+- A `NORMAL` product out of stock with a lead time of 0 sends no notification.
+- `SEASONAL` products are not sold on the first or last day of the season, because the season check uses strict comparisons with today's date, while the fallback compares with the current time of day. Missing season dates mean the product is never sold.
+- `EXPIRABLE` products expiring later today are still sold; out-of-stock products that are not expired still receive an expiration notification and a stock of 0; a missing expiry date stops the order with `InvalidOperationException`.
+- Without a transaction, a failure keeps earlier products saved and leaves later products untouched.
+- Products are processed in the order returned by EF Core.
+
+Intentional differences from the original implementation, none of which changes stored data or notifications during order processing:
+
+- Notifications are always sent before the stock update and save. The original delay path saved before notifying; a direct `ProductService.NotifyDelay` call on an entity with other unsaved changes now notifies before persisting them.
+- The clock is read once per order instead of several times per product, which only differs for a request running across midnight.
+- The explicit `EntityState.Modified` marking of the `NORMAL` branch was dropped; change tracking persists the same values.
 - `Console.WriteLine(order)` was removed and `ProductService` is no longer registered in dependency injection.
 
-### Known limitations and technical debt
+## 12. Known limitations and technical debt
 
 - Product types are strings; an enum or value object would require an entity change.
-- `ProductService` can be removed together with its legacy unit tests.
-- Product iteration follows the order in which EF Core returns order items, as in the original code.
+- `NotificationService` is a protected no-op stub, so no notification is actually delivered.
+- Persistence is in-memory only and there is no endpoint to create orders or products.
+- `SystemClock` uses the host's local time.
+- Unknown orders return HTTP 500 rather than 404.
+- `ProductService` is legacy code depending on concrete Infrastructure types; it can be removed together with its unit tests.
+- Test namespaces mix `Refacto.Dotnet` and `Refacto.DotNet` casing, and test method names use underscores (65 CA1707 suggestions).

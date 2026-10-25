@@ -12,6 +12,7 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+// The protected notification service is exposed to the application layer through its port adapter.
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IProductNotificationPort, ProductNotificationAdapter>();
 builder.Services.AddScoped<ProductDecisionExecutor>();
